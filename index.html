@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="LongContextVLA scales robot memory to hundreds of images using streaming visual history, memory narration, and fast inference.">
+  <meta name="color-scheme" content="light">
+  <title>LongContextVLA: Scaling Robot Memory to Hundreds of Images</title>
+  <link rel="stylesheet" href="styles.css?v=solid-black-1">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="hero">
+    <h1>LongContextVLA:<span>Scaling Robot Memory to<br class="desktop-break"> Hundreds of Images</span></h1>
+    <p class="authors">Anonymous authors</p>
+  </header>
+
+  <main id="main">
+    <section class="overview" aria-label="Overview">
+      <figure>
+        <a class="figure-link" href="assets/overview.png" target="_blank" rel="noopener" aria-label="View the overview figure at full size">
+          <img src="assets/overview.png" width="1316" height="361" alt="LongContextVLA processes over 200 frames of streaming visual memory with a Qwen3.5-4B backbone, reasoning, subtask prediction, and action tokens to perform the shell game, drawer put-away, and video-prompted sorting.">
+        </a>
+      </figure>
+    </section>
+
+    <section id="abstract" class="prose">
+      <h2>Abstract</h2>
+      <p>Vision-language-action (VLA) models typically condition on only the current observation or a small set of past keyframes. This limits their ability to solve long-horizon tasks that require persistent visual memory. We develop a VLA that conditions on more than 200 images of visual history while maintaining real-time inference speed. Our approach builds on Qwen3.5-4B, a multimodal model with a 262K-token context window, which we fine-tune for robotic control. We find that long visual context alone is insufficient for robust generalization on memory-intensive tasks, so we train the VLA to reason over and narrate events in its visual history, using parallel decoding to avoid the latency cost of autoregressive reasoning. By caching past visual tokens and processing only newly arriving images, our streaming implementation achieves per-step latency close to that of a single-image VLA. We evaluate our approach on a long-horizon shell game and object retrieval task, achieving average 83% success in unseen scenarios, as well as competitive performance on the RoboMME benchmark. Finally, we demonstrate memory-based prompting, where the robot observes a human demonstration and reproduces the demonstrated behavior, and can generalize to new scenarios. Together, our results show that scalable visual memory, learned reasoning, and streaming inference enable real-time, long-horizon robot control.</p>
+    </section>
+
+    <section id="demonstrations">
+      <div class="prose section-intro">
+        <h2>Demonstrations</h2>
+      </div>
+      <article class="demo">
+        <h3 id="cup-title">Shell Game: Unseen 5-Shuffle Sequences</h3>
+        <p class="video-caption"><em>LongContextVLA (ours): subtask + narration + latent narration</em></p>
+        <video controls playsinline preload="none" poster="assets/cup-poster.jpg" aria-labelledby="cup-title" aria-describedby="cup-description">
+          <source src="videos/cup_mix.mp4" type="video/mp4">
+          Your browser does not support embedded video. <a href="videos/cup_mix.mp4">Download the shell game video.</a>
+        </video>
+        <p id="cup-description" class="demo-description">A human hides a block beneath a cup and shuffles the cups five times. The robot must track the hidden block through a shuffle sequence unseen during training and lift the correct cup.</p>
+      </article>
+      <article class="demo">
+        <h3 id="drawer-title">Drawer Task: Unseen Object-to-Drawer Configurations</h3>
+        <p class="video-caption"><em>LongContextVLA (ours): subtask + narration + latent narration</em></p>
+        <video controls playsinline preload="none" poster="assets/drawer-poster.jpg" aria-labelledby="drawer-title" aria-describedby="drawer-description">
+          <source src="videos/drawer.mp4" type="video/mp4">
+          Your browser does not support embedded video. <a href="videos/drawer.mp4">Download the drawer task video.</a>
+        </video>
+        <p id="drawer-description" class="demo-description">After watching a human remove six objects from six drawers, the robot returns each object to its original drawer. The object-to-drawer assignments were not seen during training.</p>
+      </article>
+      <article class="demo">
+        <h3 id="prompting-title">Video Prompting Task</h3>
+        <p class="video-caption" id="prompting-description">We replace LongContextVLA’s memory context with a video demonstrating how to sort the objects. The robot must imitate the demonstrated sorting. Although trained only with <strong>three-object prompts</strong>, it generalizes to <strong>five objects</strong>, including two never seen during training: a yellow banana and a paper cup.</p>
+        <video controls playsinline preload="none" poster="assets/prompting-poster.jpg" aria-labelledby="prompting-title" aria-describedby="prompting-description">
+          <source src="videos/prompting_ood.mp4" type="video/mp4">
+          Your browser does not support embedded video. <a href="videos/prompting_ood.mp4">Download the video prompting demonstration.</a>
+        </video>
+      </article>
+    </section>
+
+    <section id="method">
+      <div class="prose">
+        <h2>Our Approach</h2>
+        <p>Unlike approaches that compress visual history into selected keyframes or textual summaries, LongContextVLA retains the full sequence of visual observations sampled at 2 Hz. As shown below, the model builds on Qwen3.5-4B and conditions on this visual history, current wrist images, the task instruction, and the robot’s joint states. It produces three outputs: <strong>memory narration, subtask prediction, and action generation</strong>. Memory narration provides supervision for reasoning about task-relevant events in the history. The model then predicts the current subtask and generates action tokens, which the OAT decoder converts into a continuous action sequence.</p>
+        <p>This design introduces two potential sources of latency. First, generating a narration word by word is too slow for real-time control. To combat this, we append a block of reserved tokens and <strong>decode the narration in parallel in a single forward pass</strong>. The model uses the representations at these positions to predict the subtask and actions without autoregressively generating and feeding back the narration.</p>
+        <p>Second, repeatedly processing the entire visual history would become increasingly expensive as an episode progresses. We therefore <strong>cache past visual features and model state</strong>, including attention keys and values and the backbone’s recurrent state (for the Gated DeltaNet layers of Qwen3.5). At each decision, the model processes only newly received observations alongside the current decision inputs, reusing computation from earlier images. This keeps inference latency close to that of a short-context VLA over a substantial range of history lengths, although latency still grows as new tokens attend to the expanding history.</p>
+      </div>
+      <figure>
+        <a class="figure-link" href="assets/architecture.png" target="_blank" rel="noopener" aria-label="View the architecture figure at full size">
+          <img src="assets/architecture.png" width="1285" height="523" loading="lazy" alt="Architecture diagram showing streaming top-down history and wrist images entering a cached Qwen3.5-4B backbone, with parallel narration, subtask prediction, and grouped action tokens.">
+        </a>
+        <figcaption><strong>Architecture.</strong> Cached history, parallel narration, and grouped action prediction enable efficient control with long visual context.</figcaption>
+      </figure>
+    </section>
+
+    <section id="results">
+      <div class="prose">
+        <h2>Main results</h2>
+        <h3>Generalizing to unseen real-world scenarios</h3>
+        <p>Narrating the past improves generalization beyond subtask prediction alone, especially when tracking a hidden object through a sequence of cup shuffles.</p>
+      </div>
+      <div class="table-wrap" role="region" aria-label="Real-robot results" tabindex="0">
+        <table>
+          <caption>Success rates in unseen evaluation settings</caption>
+          <thead><tr><th scope="col">Evaluation setting</th><th scope="col">Subtask only</th><th scope="col">Subtask + narration</th><th scope="col">+ latent narration (ours)</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Shell game · unseen 5 shuffles</th><td>60.0%</td><td>73.3%</td><td class="best">93.3%</td></tr>
+            <tr><th scope="row">Shell game · unseen 6 shuffles</th><td>53.3%</td><td>66.7%</td><td class="best">73.3%</td></tr>
+            <tr><th scope="row">Drawer · unseen configurations</th><td>76.7%</td><td>80.0%</td><td class="best">83.3%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">Shell game: 15 trials per setting. Drawer task: 5 trials, each with 6 object placements.</p>
+      <figure>
+        <a class="figure-link" href="assets/real-robot-results.png" target="_blank" rel="noopener" aria-label="View the real-robot results figure at full size">
+          <img src="assets/real-robot-results.png" width="1320" height="419" loading="lazy" alt="Success-rate charts comparing Pi0.7, MemER, and LongContextVLA variants across cup shuffling, drawer placement, and video prompting. LongContextVLA achieves 93.3 percent on unseen five-shuffle sequences, 83.3 percent on unseen drawer assignments, and 90 percent on five-object video prompting.">
+        </a>
+        <figcaption><strong>Real-robot results.</strong> Comparisons across training and unseen settings.</figcaption>
+      </figure>
+      <p class="prose"><strong>Video prompting transfers from 3 to 5 objects.</strong> Success reaches <strong>90%</strong> with five objects at test time, compared with 80% for MemER and 20% for π0.7. The three-object training setting reaches 100%. Each setting uses 10 trials.</p>
+
+      <div class="prose result-subsection" id="robomme-results">
+        <h3>RoboMME Results</h3>
+        <p>On RoboMME, LongContextVLA achieves <strong>84.9% average success</strong> across 16 tasks, evaluated on 50 episodes per task (800 episodes total). This is 40.4 percentage points above the strongest compared non-oracle baseline in the paper.</p>
+      </div>
+      <div class="table-wrap" role="region" aria-label="RoboMME category results" tabindex="0">
+        <table>
+          <caption>RoboMME category-level success rates (%) · Table 1</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Counting</th><th scope="col">Permanence</th><th scope="col">Reference</th><th scope="col">Imitation</th><th scope="col">Average</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">SimpleSG (Gemini)</th><td>39.0</td><td>13.5</td><td>22.5</td><td>18.0</td><td>23.3</td></tr>
+            <tr><th scope="row">SimpleSG (QwenVL)</th><td>44.6</td><td>19.6</td><td>25.2</td><td>26.6</td><td>29.0</td></tr>
+            <tr><th scope="row">GroundSG (Gemini)</th><td>12.8</td><td>15.8</td><td>11.3</td><td>6.5</td><td>11.6</td></tr>
+            <tr><th scope="row">GroundSG (QwenVL)</th><td>38.0</td><td>39.3</td><td>31.6</td><td>21.9</td><td>32.7</td></tr>
+            <tr><th scope="row">TokenDrop (Context)</th><td>57.9</td><td>26.9</td><td>23.7</td><td>29.5</td><td>34.5</td></tr>
+            <tr><th scope="row">TokenDrop (Modul)</th><td>52.3</td><td>26.8</td><td>34.7</td><td>38.3</td><td>38.0</td></tr>
+            <tr><th scope="row">TokenDrop (Expert)</th><td>59.4</td><td>23.6</td><td>25.3</td><td>31.1</td><td>34.9</td></tr>
+            <tr><th scope="row">FrameSamp (Context)</th><td>50.1</td><td>23.3</td><td>20.9</td><td>28.3</td><td>30.7</td></tr>
+            <tr><th scope="row">FrameSamp (Modul)</th><td>65.2</td><td>25.1</td><td>36.3</td><td>51.4</td><td>44.5</td></tr>
+            <tr><th scope="row">FrameSamp (Expert)</th><td>66.8</td><td>25.2</td><td>24.1</td><td>28.9</td><td>36.3</td></tr>
+            <tr><th scope="row">TTT (Context)</th><td>36.1</td><td>21.4</td><td>22.0</td><td>9.7</td><td>22.3</td></tr>
+            <tr><th scope="row">TTT (Modul)</th><td>34.5</td><td>22.2</td><td>20.4</td><td>10.7</td><td>22.0</td></tr>
+            <tr><th scope="row">TTT (Expert)</th><td>36.0</td><td>22.9</td><td>19.7</td><td>10.8</td><td>22.3</td></tr>
+            <tr><th scope="row">RMT (Context)</th><td>32.2</td><td>15.4</td><td>19.7</td><td>10.6</td><td>19.5</td></tr>
+            <tr><th scope="row">RMT (Modul)</th><td>34.1</td><td>15.8</td><td>21.1</td><td>9.7</td><td>20.2</td></tr>
+            <tr><th scope="row">RMT (Expert)</th><td>34.4</td><td>15.7</td><td>14.7</td><td>7.8</td><td>18.1</td></tr>
+            <tr><th scope="row">π0.5</th><td>28.8</td><td>17.0</td><td>17.2</td><td>8.8</td><td>17.9</td></tr>
+            <tr><th scope="row">WeaveVLA</th><td>31.0</td><td>19.5</td><td>12.5</td><td>9.5</td><td>18.1</td></tr>
+            <tr><th scope="row">π0.5 w/ past actions</th><td>29.1</td><td>22.8</td><td>15.9</td><td>11.2</td><td>19.7</td></tr>
+            <tr><th scope="row">SAM2Act+</th><td>35.3</td><td>26.0</td><td>16.8</td><td>7.3</td><td>21.4</td></tr>
+            <tr><th scope="row">MemER</th><td>48.8</td><td>53.2</td><td>38.0</td><td>29.5</td><td>42.4</td></tr>
+            <tr class="ours"><th scope="row">LongContextVLA (ours)</th><td>86.5</td><td>94.0</td><td>84.5</td><td>74.5</td><td>84.9</td></tr>
+          </tbody>
+          <tbody class="reference-results">
+            <tr><th scope="rowgroup" colspan="6">Reference only · excluded from ranking</th></tr>
+            <tr><th scope="row">Human performance</th><td>88.5</td><td>91.0</td><td>93.0</td><td>89.5</td><td>90.5</td></tr>
+            <tr><th scope="row">SimpleSG (Oracle / GT VLM)</th><td>82.6</td><td>21.6</td><td>32.3</td><td>61.9</td><td>49.6</td></tr>
+            <tr><th scope="row">GroundSG (Oracle / GT VLM)</th><td>83.9</td><td>93.3</td><td>95.2</td><td>64.0</td><td>84.1</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">Average is computed over all 16 tasks. Parentheses identify each method’s integration, VLM, or variant. Human and oracle results are provided for reference and excluded from ranking. <a href="paper.pdf#page=8">Table 1 in the paper.</a></p>
+
+      <div class="prose result-subsection">
+        <h3>Streaming inference keeps long histories practical</h3>
+        <p>Caching avoids recomputing the full history at each decision. In the latency scaling experiment, cached inference stays below one second at approximately <strong>258K historical visual tokens</strong> on both H100 and B200 GPUs.</p>
+      </div>
+      <figure class="latency-figure">
+        <a class="figure-link" href="assets/latency.png" target="_blank" rel="noopener" aria-label="View the inference latency figure at full size">
+          <img src="assets/latency.png" width="1277" height="592" loading="lazy" alt="Logarithmic plot of inference latency versus historical visual tokens on H100 and B200 GPUs. Cached inference grows much more slowly than inference from scratch and reaches approximately 1.8 seconds at one million tokens.">
+        </a>
+        <figcaption><strong>Inference latency with and without caching.</strong> Both axes are logarithmic. At one million visual tokens, cached inference takes 1.78–1.82 seconds, exceeding a one-second budget.</figcaption>
+      </figure>
+    </section>
+  </main>
+</body>
+</html>
