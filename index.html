@@ -52,6 +52,15 @@
         <p id="drawer-description" class="demo-description">After watching a human remove six objects from six drawers, the robot returns each object to its original drawer. The object-to-drawer assignments were not seen during training.</p>
       </article>
       <article class="demo">
+        <h3 id="cognitive-title">Cognitive Drawer Task: Unseen Object-Drawer-Query Configuration</h3>
+        <p class="video-caption"><em>LongContextVLA (ours): subtask + narration + latent narration</em></p>
+        <video controls playsinline preload="none" aria-labelledby="cognitive-title" aria-describedby="cognitive-description">
+          <source src="videos/cognitive_drawer_task.mp4" type="video/mp4">
+          Your browser does not support embedded video. <a href="videos/cognitive_drawer_task.mp4">Download the cognitive drawer task video.</a>
+        </video>
+        <p id="cognitive-description" class="demo-description">A human removes six objects from six drawers and uses each one while the robot watches. The robot is then asked a question about what it saw and must return the matching object. For example, it might be asked for the object that was used the most, an object that was never used, or the object used a specific number of times. When two objects were used the same number of times, the question says which one to return: the one used last or the one used first. This scenario is an unseen object-drawer-query combination, so the exact setup never appeared during training.</p>
+      </article>
+      <article class="demo">
         <h3 id="prompting-title">Video Prompting Task</h3>
         <p class="video-caption" id="prompting-description">We replace LongContextVLA’s memory context with a video demonstrating how to sort the objects. The robot must imitate the demonstrated sorting. Although trained only with <strong>three-object prompts</strong>, it generalizes to <strong>five objects</strong>, including two never seen during training: a yellow banana and a paper cup.</p>
         <video controls playsinline preload="none" poster="assets/prompting-poster.jpg" aria-labelledby="prompting-title" aria-describedby="prompting-description">
